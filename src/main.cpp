@@ -28,10 +28,18 @@ static constexpr double OFFSET = (LEN_PER_GRID - LEN_PER_CELL) / 2;
 
 struct GlobalVector2{
     double x; double y;
+    
+    bool operator==(const GlobalVector2& other) const {
+        return x == other.x && y == other.y;
+    }
 };
 
 struct GridVector2{
     int x; int y;
+
+    bool operator==(const GridVector2& other) const {
+        return x == other.x && y == other.y;
+    }
 };
 
 GridVector2 globalToGrid(GlobalVector2 global_vec){
@@ -69,12 +77,13 @@ std::vector<GridVector2> FilterSelectables(
                         || _y + offset_y >= NUM
                         || game_grid[_x + offset_x][_y + offset_y] != her
                     ){ continue; }
-                    rtn.emplace_back(
-                        GridVector2{
-                            .x = _x + offset_x,
-                            .y = _y + offset_y
-                        }
-                    );
+                    GridVector2 to_append{
+                        .x = _x + offset_x,
+                        .y = _y + offset_y
+                    };
+                    if (std::find(rtn.begin(), rtn.end(), to_append) == rtn.end()){
+                        rtn.emplace_back(to_append);
+                    }
                 }
             }
         }
@@ -100,6 +109,7 @@ std::vector<GridVector2> ScanSurroundings(
                 || placed_x + offset_x >= NUM
                 || placed_y + offset_y < 0
                 || placed_y + offset_y >= NUM
+                || (offset_x == 0 && offset_y == 0)
                 || game_grid[placed_x + offset_x][placed_y + offset_y] != her
             ){ continue; }
 
@@ -109,7 +119,12 @@ std::vector<GridVector2> ScanSurroundings(
                     || placed_x + (offset_x * i) >= NUM
                     || placed_y + (offset_y * i) < 0
                     || placed_y + (offset_y * i) >= NUM
-                ) { break; }
+                ){ 
+                    for (int _ = 0; _ < buffering_count; ++_){
+                        buf.pop_back();
+                    }
+                    break; 
+                }
                 char checking = game_grid[placed_x + (offset_x * i)][placed_y + (offset_y * i)];
                 if (checking == her){
                     buf.emplace_back(
@@ -197,6 +212,11 @@ int main(int argc, char* argv[]){
         std::cerr << "SelectingUnable img loading failed: " << SDL_GetError() << "\n";
         return 1;
     }
+    SDL_Texture* selectable_tex = IMG_LoadTexture(renderer, "../selectable.png");
+    if (!selectable_tex) {
+        std::cerr << "Selectable img loading failed: " << SDL_GetError() << "\n";
+        return 1;
+    }
     //white suisei  black azki
 
 
@@ -221,9 +241,19 @@ int main(int argc, char* argv[]){
 
     bool is_blacks_turn{true};
     bool is_game_ended{false};
-    bool is_selecting_selectable{true};
-
+    bool do_show_hints{false};
     GridVector2 current_on{GridVector2{.x = 5, .y = 4}};
+    std::vector<GridVector2> selectable_cells{
+        GridVector2{.x = 5, .y = 4},
+        GridVector2{.x = 4, .y = 5},
+        GridVector2{.x = 2, .y = 3},
+        GridVector2{.x = 3, .y = 2}
+    };
+    std::vector<GridVector2> turnables_buf;
+    char myself = is_blacks_turn ? 'b' : 'w';
+    game_grid[current_on.x][current_on.y] = myself;
+    turnables_buf = ScanSurroundings(current_on, myself, game_grid);
+    game_grid[current_on.x][current_on.y] = 'n';
 
     while (running)
     {
@@ -247,49 +277,62 @@ int main(int argc, char* argv[]){
                         if (current_on.y + 1 <= 7){ ++ current_on.y; }
                     }
                     if (game_grid[current_on.x][current_on.y] != 'n'){ 
-                        is_selecting_selectable = false;
+                        turnables_buf.clear();
                     } else {
                         char myself = is_blacks_turn ? 'b' : 'w';
-                        game_grid[current_on.x][current_on.y] = myself;
-                        std::vector<GridVector2> turnables = ScanSurroundings(current_on, myself, game_grid);
-                        is_selecting_selectable = !turnables.empty();
-                        game_grid[current_on.x][current_on.y] = 'n';
+                        turnables_buf = ScanSurroundings(current_on, myself, game_grid);
                     }
                 } 
                 else if (event.key.scancode == SDL_SCANCODE_RETURN){
-                    if (game_grid[current_on.x][current_on.y] != 'n'){ break; }
+                    if (turnables_buf.empty()){ break; }
                     char myself = is_blacks_turn ? 'b' : 'w';
                     game_grid[current_on.x][current_on.y] = myself;
-                    std::vector<GridVector2> turnables = ScanSurroundings(current_on, myself, game_grid);
-                    if (turnables.empty()){
-                        game_grid[current_on.x][current_on.y] = 'n';
-                        break; 
-                    }
-                    for (GridVector2 turnable : turnables){
-                        game_grid[turnable.x][turnable.y] = myself;
-                    }
-                    for (int i = 0; i < NUM; ++i){for (int l = 0; l < NUM; ++l){std::cout<<game_grid[l][i]<<" | ";}std::cout<<"\n";}std::cout<<"******\n";
+                    for (GridVector2 turnable : turnables_buf){ game_grid[turnable.x][turnable.y] = myself; }
+                    turnables_buf.clear();
 
-                    bool have_selectable{false};
-                    std::vector<GridVector2> selectables = FilterSelectables(myself, game_grid);
-                    for (GridVector2 selectable : selectables){
-                        std::array<std::array<char, 8>, 8> game_grid_cp = game_grid;
-                        game_grid_cp[selectable.x][selectable.y] = myself;
-                        std::cout<<selectable.x<<"/"<<selectable.y<<"//"<<selectables.size()<<"\n";
-                        for (int i = 0; i < NUM; ++i){for (int l = 0; l < NUM; ++l){std::cout<<game_grid_cp[l][i]<<" | ";}std::cout<<"\n";}std::cout<<"---------\n";
-                        std::vector<GridVector2> foresee_turnables = ScanSurroundings(selectable, myself, game_grid_cp);
-                        if (!foresee_turnables.empty()){
-                            have_selectable = true;
+                    do_show_hints = false;
+                    selectable_cells.clear();
+                    myself = !is_blacks_turn ? 'b' : 'w';
+                    for (int _x = 0; _x < NUM; ++_x){
+                        for (int _y = 0; _y < NUM; ++_y){
+                            if (game_grid[_x][_y] != 'n') { continue; }
+                            std::vector<GridVector2> _turnables = ScanSurroundings(GridVector2{.x = _x, .y = _y}, myself, game_grid);
+                            if (!_turnables.empty()){
+                                selectable_cells.emplace_back(GridVector2{.x = _x, .y = _y});
+                            }
+                        }
+                    }
+                    if (!selectable_cells.empty()){
+                        is_blacks_turn = !is_blacks_turn;
+                    } else{
+                        selectable_cells.clear();
+                        myself = is_blacks_turn ? 'b' : 'w';
+                        for (int _x = 0; _x < NUM; ++_x){
+                            for (int _y = 0; _y < NUM; ++_y){
+                                if (game_grid[_x][_y] != 'n') { continue; }
+                                std::vector<GridVector2> _turnables = ScanSurroundings(GridVector2{.x = _x, .y = _y}, myself, game_grid);
+                                if (!_turnables.empty()){
+                                    selectable_cells.emplace_back(GridVector2{.x = _x, .y = _y});
+                                }
+                            }
+                        }
+                        if (!selectable_cells.empty()){
+                            is_blacks_turn = is_blacks_turn;
+                        } else {
+                            is_game_ended = true;
                             break;
                         }
                     }
-                    if (have_selectable) {is_blacks_turn = !is_blacks_turn;}
+
                 } 
                 else if (event.key.scancode == SDL_SCANCODE_SPACE){
                     if (is_game_ended) {
                         running = false;
                         break;
                     }
+                }
+                else if (event.key.scancode == SDL_SCANCODE_H){
+                    do_show_hints = !do_show_hints;
                 }
             }
         }
@@ -313,7 +356,13 @@ int main(int argc, char* argv[]){
                 } else if (game_grid[_x][_y] == 'w'){
                     texture_to_use = suisei_tex;
                 } else {
-                    texture_to_use = nil_tex;
+                    if (do_show_hints
+                        && std::find(selectable_cells.begin(), selectable_cells.end(), GridVector2{.x = _x, .y = _y}) != selectable_cells.end()
+                    ){
+                        texture_to_use = selectable_tex;
+                    } else{
+                        texture_to_use = nil_tex;
+                    }
                 }
 
                 GlobalVector2 global_vec = gridToGlobal(
@@ -340,7 +389,7 @@ int main(int argc, char* argv[]){
         };
         SDL_RenderTexture(
             renderer,
-            is_selecting_selectable ? selecting_tex : selecting_unable_tex,
+            !turnables_buf.empty() ? selecting_tex : selecting_unable_tex,
             nullptr,
             &selecting_overlay
         );
