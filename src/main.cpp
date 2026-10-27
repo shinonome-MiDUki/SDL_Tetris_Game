@@ -73,14 +73,15 @@ int main(int argc, char* argv[]){
     }
 
     SDL_FRect player_obj = SDL_FRect{
-        .h = PLAYER_OBJ_H, .w = PLAYER_OBJ_W, 
         .x = static_cast<int>((SCREEN_LEN / 2) - (PLAYER_OBJ_W / 2)), 
-        .y = static_cast<int>(SCREEN_LEN * 0.9)
+        .y = static_cast<int>(SCREEN_LEN * 0.9),
+        .w = PLAYER_OBJ_W, .h = PLAYER_OBJ_H
     };
     Ball ball = Ball{
         .ball_frect = SDL_FRect{
-            .h = BALL_R * 2, .w = BALL_R * 2,
-            .x = static_cast<int>(SCREEN_LEN / 2) - BALL_R, .y = static_cast<int>((SCREEN_LEN * 0.9) - (BALL_R * 2))
+            .x = static_cast<int>(SCREEN_LEN / 2) - BALL_R,
+            .y = static_cast<int>((SCREEN_LEN * 0.9) - (BALL_R * 2)),
+            .w = BALL_R * 2, .h = BALL_R * 2
         },
         .center_x = static_cast<double>(SCREEN_LEN / 2),
         .center_y = static_cast<double>((SCREEN_LEN * 0.9)),
